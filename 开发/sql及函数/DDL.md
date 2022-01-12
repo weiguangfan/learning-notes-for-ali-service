@@ -5,15 +5,16 @@
 --********************************************************************--
 ---表操作
 ---1)创建非分区表
-CREATE TABLE test_01 (key STRING );
+> CREATE TABLE test_01 (key STRING );
+
 ---2)创建一张分区表
-CREATE TABLE if not exists  test_02(
+> CREATE TABLE if not exists  test_02(
 shop_name STRING ,
 customer_id STRING ,
 total_price DOUBLE
-
 )
 PARTITIONED BY (sale_date STRING ,region STRING );
+
 ---3)创建一个新表,将test_02的数据复制到test_04中，并设置生命周期。
 CREATE TABLE test_04 LIFECYCLE 10 as SELECT * FROM test_02 WHERE sale_date = '2013' and region = 'china';
 
