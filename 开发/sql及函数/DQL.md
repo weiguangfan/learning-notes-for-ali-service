@@ -522,7 +522,49 @@ intersect distinct
 select * from values (1, 2), (1, 2), (3, 4), (5, 7) t(a, b);
 
 -- SKEWJOIN HINT
+-- 当两张表Join存在热点，导致出现长尾问题时，您可以通过取出热点key，将数据分为热点数据和非热点数据两部分处理，最后合并的方式，提高Join效率。
+-- SkewJoin Hint可以通过自动或手动方式获取两张表的热点key，分别计算热点数据和非热点数据的Join结果并合并，加快Join的执行速度。
+-- 您需要在select语句中使用Hint提示/*+ skewJoin(<table_name>[(<column1_name>[,<column2_name>,...])][((<value11>,<value12>)[,(<value21>,<value22>)...])]*/才会执行MapJoin。
+-- table_name为倾斜表名，column_name为倾斜列名，value为倾斜key值。
 
+--方法1：Hint表名（注意Hint的是表的alias）。
+select /*+ skewjoin(a) */ * from test_06 a join test_07 b on a.shop_name = b.shop_name and a.customer_id = b.customer_id;
+
+--方法2：Hint表名和认为可能产生倾斜的列，例如表a的c0和c1列存在数据倾斜。
+SELECT /*+ skewjoin(a(shop_name,customer_id)) */ * FROM test_06 a join test_07 b on a.shop_name = b.shop_name and a.customer_id = b.customer_id and a.total_price = b.total_price;
+
+--方法3：Hint表名和列，并提供发生倾斜的key值。如果是STRING类型，需要加上引号。例如(a.c0=1 and a.c1="2")和(a.c0=3 and a.c1="4")的值都存在数据倾斜。
+SELECT /*+ skewjoin(a(shop_name,customer_id)(("s2","c2"),("s5","c2"))) */ * FROM test_06 a join test_07 b on a.shop_name = b.shop_name and a.customer_id = b.customer_id and a.total_price = b.total_price;
+
+-- 热值Key指出现次数很多的key值。
+-- 在不加SkewJoin Hint的情况下，将表T0和表T1进行Join，由于T0和T1的数量都很大，只能进行MergeJoin，因此相同的热值都会Shuffle到一个节点，导致数据倾斜。
+-- 加SkewJoin Hint后，优化器会运行一个Aggregate动态获取重复行数前20的热值，并将表T0中属于热值的值（数据A）、T0中不属于热值的值（数据B）拆分；
+-- 将表T1中能与T0中热值Join的值（数据C）、表T1中不能与T0中热值Join的值（数据D）进行拆分。
+-- 然后将数据A与数据C进行MapJoin（由于数据C量很少，可以进行MapJoin），
+-- 将数据B和数据D进行MergeJoin。
+-- 最后将MapJoin和MergeJoin的结果Union，生成最后的结果
+
+-- SkewJoin Hint支持的Join类型：
+-- Inner Join可以对Join两侧表中的任意一侧进行Hint。
+-- Left Join、Semi Join和Anti Join只可以Hint左侧表。
+-- Right Join只可以Hint右侧表。
+-- Full Join不支持Skew Join Hint。
+-- 建议只对一定会出现数据倾斜的Join添加Hint，因为Hint会运行一个Aggregate，存在一定代价。
+-- 被Hint的Join的Left Side Join Key的类型需要与Right Side Join Key的类型一致，否则SkewJoin Hint不生效。
+-- 您可以通过在子查询中将Join key进行Cast从而保持一致。
+-- create table T0(c0 int, c1 int, c2 int, c3 int);
+-- create table T1(c0 string, c1 int, c2 int);
+--方法1：
+-- select /*+ skewjoin(a) */ * from T0 a join T1 b on cast(a.c0 as string) = cast(b.c0 as string) and a.c1 = b.c1;
+-- --方法2：
+-- select /*+ skewjoin(b) */ * from (select cast(a.c0 as string) as c00 from T0 a) b join T1 c on b.c00 = c.c0;
+
+-- 加SkewJoin Hint后，优化器会运行一个Aggregate获取前20的热值。20是默认值，您可以通过set odps.optimizer.skew.join.topk.num = xx;进行设置。
+-- SkewJoin Hint只支持对Join其中一侧进行Hint。
+-- 被Hint的Join一定要有left key = right key，不支持笛卡尔积Join。
+-- 与其它Hint一起使用的方法如下，但需要注意，被MapJoin Hint的Join不能再添加SkewJoin Hint。
+-- select /*+ mapjoin(c), skewjoin(a) */ * from T0 a join T1 b on a.c0 = b.c3 join T2 c on a.c0 = c.c7;
+-- 您可以在Logview的Json Summary中搜索是否出现topk_agg字段判断SkewJoin Hint是否生效
 
 
 
