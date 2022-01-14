@@ -861,6 +861,38 @@ group by a, b, c grouping sets ((a,b,c), (a));
 -- MaxCompute和Hive 2.3.0及以上版本兼容该函数，在Hive 2.3.0以下版本中该函数输出不一致，因此并不推荐您使用此函数。
 
 
+-- SELECT TRANSFORM
+-- select transform语法允许您启动一个指定的子进程，将输入数据按照一定的格式通过标准输入至子进程，并且通过解析子进程的标准输出获取输出数据。
+-- select transform让您无需编写UDF，便可以实现MaxCompute SQL对其他脚本语言的支持。
+-- select transform与UDTF在不同场景下的性能不同。经过多种场景对比测试，数据量较小时，大多数场景下select transform有优势，而数据量大时UDTF有优势。
+-- select transform的开发更加简便，更适合于Ad Hoc（即席查询）。
+-- select transform不仅仅是语言支持的扩展。
+-- 一些简单的功能，例如AWK、Python、Perl、Shell都支持直接在命令中写脚本，而不需要专门编写脚本文件、上传资源等，开发过程更简单。
+-- 对于复杂的功能，您可以上传脚本文件来执行，请参见调用Python脚本使用示例、调用Java脚本使用示例。
+
+-- 用Shell命令使用示例
+-- 假设通过Shell命令生成50行数据，值是从1到50，输出为data字段。
+-- 直接将Shell命令作为transform数据输入。命令示例如下：
+select transform(script) using 'sh' as (data)
+from (
+select  'for i in `seq 1 50`; do echo $i; done' as script
+) t
+;
+--等效于如下语句。
+select transform('for i in `seq 1 50`; do echo $i; done') using 'sh' as (data);
+
+
+-- 调用Python命令使用示例
+-- 假设通过Python命令生成50行数据，值是从1到50，输出为data字段。
+-- 直接将Python命令作为transform数据输入。命令示例如下：
+select transform(script) using 'python' as (data)
+from (
+select  'for i in xrange(1, 51):  print i;' as script
+) t
+;
+--等效于如下语句。
+select transform('for i in xrange(1, 51):  print i;') using 'python' as (data);
+
 
 
 
