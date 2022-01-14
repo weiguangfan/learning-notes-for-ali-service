@@ -664,6 +664,20 @@ lateral view explode(col1) myTable1 as mycol1
 lateral view explode(col2) myTable2 as mycol2;
 
 
+-- HAVING子句
+-- MaxCompute SQL的WHERE关键字无法与聚合函数一起使用，此时您可以使用HAVING子句来实现。
+-- SELECT column_name, aggregate_function(column_name)
+-- FROM table_name
+-- WHERE column_name operator value
+-- GROUP BY column_name
+-- HAVING aggregate_function(column_name) operator value
+
+SELECT * FROM test_02;
+DESC EXTENDED test_02;
+
+SELECT shop_name,SUM(total_price) FROM test_02
+GROUP BY shop_name
+HAVING SUM(total_price)> 100.3;
 
 
 
