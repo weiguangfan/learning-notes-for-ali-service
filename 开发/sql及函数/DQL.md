@@ -858,7 +858,7 @@ a, b, c, count(*), grouping_id(a,b,c)
 from values (1,2,3) as t(a,b,c)
 group by a, b, c grouping sets ((a,b,c), (a));
 
-
+-- MaxCompute和Hive 2.3.0及以上版本兼容该函数，在Hive 2.3.0以下版本中该函数输出不一致，因此并不推荐您使用此函数。
 
 
 
