@@ -680,6 +680,183 @@ GROUP BY shop_name
 HAVING SUM(total_price)> 100.3;
 
 
+-- GROUPING SETS
+-- 对于经常需要对数据进行多维度的聚合分析的场景，您既需要对A列做聚合，也要对B列做聚合，同时要对A、B两列做聚合，因此需要多次使用union all。您可以使用grouping sets快速解决此类问题。
+-- 本文为您介绍如何使用grouping sets进行多维聚合。
+-- grouping sets是对select语句中group by子句的扩展，允许您采用多种方式对结果分组，而不必使用多个select语句再union all来实现。
+-- 这样能够使MaxCompute的引擎给出更有效的执行计划，从而提高执行性能。
+
+-- GROUPING SETS使用示例
+-- 准备数据。
+-- 对数据进行分组。您可以通过如下两种方式进行分组：
+create table test_024 lifecycle 20 as
+select * from values
+(1, 'windows', 'PC', 'Beijing'),
+(2, 'windows', 'PC', 'Shijiazhuang'),
+(3, 'linux', 'Phone', 'Beijing'),
+(4, 'windows', 'PC', 'Beijing'),
+(5, 'ios', 'Phone', 'Shijiazhuang'),
+(6, 'linux', 'PC', 'Beijing'),
+(7, 'windows', 'Phone', 'Shijiazhuang')
+as t(id, os, device, city);
+
+SELECT * FROM test_024;
+
+-- 使用多个select语句进行分组。
+select NULL, NULL, NULL, count(*)
+from test_024
+union all
+select os, device, NULL, count(*)
+from test_024 group by os, device
+union all
+select null, null, city, count(*)
+from test_024 group by city;
+
+-- 使用grouping sets进行分组。
+-- 分组集中不使用的表达式，会使用NULL充当占位符，使得这些结果集可以做操作。
+-- 例如结果第4~8行的city列。
+select os,device, city ,count(*)
+from test_024
+group by grouping sets((os, device), (city), ());
+
+-- cube 特殊的grouping sets，将指定列的所有可能组合作为grouping sets，也可以与grouping sets组合使用。
+-- group by cube (a, b, c)  
+--等效于以下语句。  
+-- grouping sets ((a,b,c),(a,b),(a,c),(b,c),(a),(b),(c),())
+
+-- group by cube ( (a, b), (c, d) )
+--等效于以下语句。
+-- grouping sets (
+--     ( a, b, c, d ),
+--     ( a, b       ),
+--     (       c, d ),
+--     (            )
+-- )
+
+-- group by a, cube (b, c), grouping sets ((d), (e))
+--等效于以下语句。
+-- group by grouping sets (
+--     (a, b, c, d), (a, b, c, e),
+--     (a, b, d),    (a, b, e),
+--     (a, c, d),    (a, c, e),
+--     (a, d),       (a, e)
+-- )
+
+-- roll up
+-- 特殊的grouping sets，以按层级聚合的方式产生grouping sets，也可以与grouping sets组合使用。
+-- group by rollup (a, b, c)
+--等效价于以下语句。  
+-- grouping sets ((a,b,c),(a,b),(a), ())
+
+-- group by rollup ( a, (b, c), d )
+--等效于以下语句。
+-- grouping sets (
+--     ( a, b, c, d ),
+--     ( a, b, c    ),
+--     ( a          ),
+--     (            )
+-- )
+
+-- group by grouping sets((b), (c), rollup(a,b,c))
+--等效于以下语句。
+-- group by grouping sets (
+--     (b), (c),
+--     (a,b,c), (a,b), (a), ()
+--  )
+
+-- CUBE | ROLLUP使用示例
+-- 基于grouping sets示例表，cube及rollup使用示例如下：
+-- 通过cube枚举os、device、city的所有可能列为grouping sets。
+select os,device, city, count(*)
+from test_024
+group by cube (os, device, city);
+--等效于如下语句。
+select os,device, city, count(*)
+from test_024
+group by grouping sets ((os, device, city),(os, device),(os, city),(device,city),(os),(device),(city),());
+
+-- 通过cube枚举(os, device),(device, city)所有可能列为grouping sets。
+select os,device, city, count(*)
+from test_024
+group by cube ((os, device), (device, city));
+--等效于如下语句。
+select os,device, city, count(*)
+from test_024
+group by grouping sets ((os, device, city),(os, device),(device,city),());
+
+-- 通过rollup对os、device、city以按层级聚合的方式产生grouping sets。
+select os,device, city, count(*)
+from test_024
+group by rollup (os, device, city);
+--等效于如下语句。
+select os,device, city, count(*)
+from test_024
+group by grouping sets ((os, device, city),(os, device),(os),());
+
+-- 通过rollup对os, (os,device), city以按层级聚合的方式产生grouping sets。
+select os,device, city, count(*)
+from test_024  
+group by rollup (os, (os,device), city);
+--等效于如下语句。
+select os,device, city, count(*)
+from test_024  
+group by grouping sets ((os, device, city),(os, device),(os),());
+
+-- 通过group by、cube、grouping sets组合产生grouping sets。
+-- 分不出优先级，怎么组合
+select os,device, city, count(*)
+from test_024
+group by os, cube(os,device), grouping sets(city);
+--等效于如下语句。
+select os,device, city, count(*)
+from test_024
+group by grouping sets((os,device,city),(os,city),(os,device,city));
+
+-- grouping
+-- grouping sets结果中使用NULL充当占位符，导致您会无法区分占位符NULL与数据中真正的NULL。
+-- 因此，MaxCompute为您提供了grouping。
+-- grouping接受一个列名作为参数，如果结果对应行使用了参数列做聚合，返回0，此时意味着NULL来自输入数据。
+-- 否则返回1，此时意味着NULL是grouping sets的占位符。
+
+-- grouping_id
+-- 接受一个或多个列名作为参数。
+-- 结果是将参数列的grouping结果按照Bitmap的方式组成整数。
+
+-- grouping__id
+-- grouping__id不带参数，用于兼容Hive查询。
+-- 此表达方式在MaxCompute中等价于grouping_id(group by参数列表)，参数与group by的顺序一致。
+
+
+-- GROUPING | GROUPING_ID使用示例
+-- grouping及grouping_id使用示例如下：
+select a,b,c,count(*),
+grouping(a) ga, grouping(b) gb, grouping(c) gc, grouping_id(a,b,c) groupingid
+from values (1,2,3) as t(a,b,c)
+group by cube(a,b,c);
+
+-- 默认情况，group by列表中不被使用的列，会被填充为NULL。
+-- 您可以通过grouping输出更有实际意义的值。
+-- 基于grouping sets示例表，命令示例如下：
+select
+if(grouping(os) == 0, os, 'ALL') as os,
+if(grouping(device) == 0, device, 'ALL') as device,
+if(grouping(city) == 0, city, 'ALL') as city,
+count(*) as count
+from test_024
+group by os, device, city grouping sets((os, device), (city), ());
+
+
+-- GROUPING__ID使用示例
+-- grouping__id不带参数的命令示例如下：
+select      
+a, b, c, count(*), grouping__id
+from values (1,2,3) as t(a,b,c)
+group by a, b, c grouping sets ((a,b,c), (a));
+--等效于如下语句。
+select      
+a, b, c, count(*), grouping_id(a,b,c)  
+from values (1,2,3) as t(a,b,c)
+group by a, b, c grouping sets ((a,b,c), (a));
 
 
 
