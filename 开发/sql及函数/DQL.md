@@ -10,8 +10,9 @@
 -- select语句查询分区表时默认禁止全表扫描。
 -- 如果您需要对分区表进行全表扫描，可以在全表扫描的SQL语句前加上命令set odps.sql.allow.fullscan=true;
 -- 如果整个项目都需要开启全表扫描，项目空间Owner执行如下命令打开开关：setproject odps.sql.allow.fullscan=true;
-set odps.sql.allow.fullscan = true;
-SELECT * FROM test_02;
+> set odps.sql.allow.fullscan = true;
+
+> SELECT * FROM test_02;
 
 show CREATE table test_01;
 
@@ -633,6 +634,34 @@ SELECT /*+ skewjoin(a(shop_name,customer_id)(("s2","c2"),("s5","c2"))) */ * FROM
 -- 验证方法
 -- 如果您已按照动态过滤器的使用方法或动态分区裁剪的使用方法完成配置，运行SQL作业后，查看作业的Logview信息。
 -- 如果Logview中出现类似DynamicFilterConsumer1的算子，说明动态过滤器已生效。
+
+
+-- Lateral View
+-- MaxCompute支持通过Lateral View与UDTF（表生成函数）结合，将单行数据拆成多行数据。
+-- 本文为您介绍如何使用Lateral View拆分行数据，并执行聚合操作。
+-- 直接在select语句中使用UDTF会存在限制，为解决此问题，您可以通过MaxCompute的Lateral View与UDTF结合使用，将一行数据拆成多行数据，并对拆分后的数据进行聚合。
+-- 当您定义的UDTF不输出任何一行时，对应的输入行在Lateral View结果中依然保留，且所有UDTF输出列为NULL。
+-- lateralView: lateral view [outer] <udtf_name>(<expression>) <table_alias> as <columnAlias> (',' <columnAlias>)
+-- fromClause: from <baseTable> (lateralView) [(lateralView) ...]
+-- from后可以有多个Lateral View语句，后面的Lateral View语句能够引用它前面的所有表和列名，实现对不同列的行数据进行拆分。
+
+-- test_023有三列数据，第一列是pageid string，第二列是col1 array<int>，第三列是col2 array<string>
+CREATE TABLE IF NOT EXISTS  test_023(pageid string ,col1 ARRAY <INT>,col2 ARRAY <STRING >);
+INSERT INTO TABLE test_023 VALUES ('front_page',array(1,2,3),array('a','b','c')),('contact_page',array(3,4,5),array('d','e','f'));
+SELECT * FROM test_023;
+
+-- 单个Lateral View语句
+-- 示例1：拆分col1。
+select pageid, col1_new, col2 from test_023 lateral view explode(col1) adTable as col1_new;
+
+-- 拆分col1并执行聚合统计。
+select col1_new, count(1) as count from test_023 lateral view explode(col1) adTable as col1_new group by col1_new;
+
+-- 多个Lateral View语句
+-- 拆分col1和col2。
+select pageid,mycol1, mycol2 from test_023
+lateral view explode(col1) myTable1 as mycol1
+lateral view explode(col2) myTable2 as mycol2;
 
 
 
